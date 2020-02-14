@@ -1144,7 +1144,8 @@ ignspec_expr:
 	};
 
 ignspec_id:
-	TOK_ID { delete $1; };
+	TOK_ID { delete $1; }
+	range_or_multirange { delete $3; };
 
 /**********************************************************************/
 
