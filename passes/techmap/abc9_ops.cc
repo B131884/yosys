@@ -204,19 +204,13 @@ void prep_xaiger(RTLIL::Module *module, bool dff)
 
 	SigMap sigmap(module);
 
-	dict<SigBit, Cell*> abc9_ff_d;
 	dict<SigBit, pool<IdString>> bit_drivers, bit_users;
 	TopoSort<IdString, RTLIL::sort_by_id_str> toposort;
 	dict<IdString, std::vector<IdString>> box_ports;
 
 	for (auto cell : module->cells()) {
-		if (cell->type == "$__ABC9_FF_") {
-			auto d = sigmap(cell->getPort(ID(D)));
-			auto r = abc9_ff_d.insert(d);
-			log_assert(r.second);
-			r.first->second = cell;
+		if (cell->type == "$__ABC9_FF_")
 			continue;
-		}
 		if (cell->has_keep_attr())
 			continue;
 
@@ -314,7 +308,6 @@ void prep_xaiger(RTLIL::Module *module, bool dff)
 
 		IdString derived_type = box_module->derive(design, cell->parameters);
 		box_module = design->module(derived_type);
-		auto abc9_flop = box_module->get_bool_attribute("\\abc9_flop");
 
 		auto r = cell_cache.insert(derived_type);
 		auto &holes_cell = r.first->second;
@@ -353,7 +346,7 @@ void prep_xaiger(RTLIL::Module *module, bool dff)
 
 				// For flops only, create an extra 1-bit input that drives a new wire
 				//   called "<cell>.abc9_ff.Q" that is used below
-				if (abc9_flop) {
+				if (box_module->get_bool_attribute("\\abc9_flop")) {
 					box_inputs++;
 					Wire *holes_wire = holes_module->wire(stringf("\\i%d", box_inputs));
 					if (!holes_wire) {
@@ -383,36 +376,6 @@ void prep_xaiger(RTLIL::Module *module, bool dff)
 				holes_module->connect(holes_wire, holes_cell->getPort(port_name));
 			else // blackbox
 				holes_module->connect(holes_wire, Const(State::S0, GetSize(w)));
-
-			// Transfer abc9_arrival value from flop box output to $__ABC9_FF_ cell
-			if (abc9_flop) {
-				auto it = cell->connections_.find(port_name);
-				if (it == cell->connections_.end())
-					continue;
-
-				auto jt = abc9_ff_d.find(it->second);
-				if (jt == abc9_ff_d.end())
-					continue;
-
-				if (!timing.count(derived_type))
-					timing.setup_module(box_module);
-				auto &t = timing.at(derived_type).arrival;
-				if (t.empty())
-					continue;
-				auto kt = t.find(it->second);
-				if (kt == t.end())
-					continue;
-
-#ifndef NDEBUG
-				if (ys_debug(1)) {
-					static std::set<std::pair<IdString,IdString>> seen;
-					if (seen.emplace(cell->type, port_name).second) log("%s.%s abc9_arrival = %d\n", log_id(cell->type), log_id(port_name), kt->second);
-				}
-#endif
-				auto r = jt->second->attributes.insert(ID(abc9_arrival));
-				log_assert(r.second);
-				r.first->second = kt->second;
-			}
 		}
 	}
 }
